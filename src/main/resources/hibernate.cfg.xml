@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-configuration PUBLIC "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+                                         "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
+<hibernate-configuration>
+ <session-factory name="">
+  <property name="hibernate.connection.driver_class">org.postgresql.Driver</property>
+  <property name="hibernate.connection.password">postgres</property>
+  <property name="hibernate.connection.url">jdbc:postgresql://localhost:5432/dbslr</property>
+  <property name="hibernate.connection.username">postgres</property>
+  <property name="hibernate.default_schema">slr</property>
+  <property name="hibernate.dialect">org.hibernate.dialect.PostgreSQLDialect</property>
+  <property name="connection_pool_size">1</property>
+  <property name="hibernate.show_sql">true</property>
+  
+  
+  <mapping class="app.configuration.db.tables.Author"/>
+  <mapping class="app.configuration.db.tables.AuthorPublications"/>
+  <mapping class="app.configuration.db.tables.Book"/>
+  <mapping class="app.configuration.db.tables.BookChapter"/>
+  <mapping class="app.configuration.db.tables.Conference"/>
+  <mapping class="app.configuration.db.tables.ConferenceEditorial"/>
+  <mapping class="app.configuration.db.tables.ConferencePaper"/>
+  <mapping class="app.configuration.db.tables.Country"/>
+  <mapping class="app.configuration.db.tables.Department"/>
+  <mapping class="app.configuration.db.tables.Edition"/>
+  <mapping class="app.configuration.db.tables.Institution"/>
+  <mapping class="app.configuration.db.tables.Journal"/>
+  <mapping class="app.configuration.db.tables.JournalEditorial"/>
+  <mapping class="app.configuration.db.tables.JournalPaper"/>
+  <mapping class="app.configuration.db.tables.Keyword"/>
+  <mapping class="app.configuration.db.tables.Publication"/>
+  <mapping class="app.configuration.db.tables.PublicationKeywords"/>
+  <mapping class="app.configuration.db.tables.Publisher"/>
+  <mapping class="app.configuration.db.tables.VolumeNumber"/>
+  
+ </session-factory>
+</hibernate-configuration>
