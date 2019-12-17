@@ -32,6 +32,6 @@
   <mapping class="app.configuration.db.tables.PublicationKeywords"/>
   <mapping class="app.configuration.db.tables.Publisher"/>
   <mapping class="app.configuration.db.tables.VolumeNumber"/>
-  
+   
  </session-factory>
 </hibernate-configuration>
