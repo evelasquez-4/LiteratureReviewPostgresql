@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 11.5
+-- Dumped from database version 11.6
 -- Dumped by pg_dump version 11.5
 
--- Started on 2019-09-29 03:44:38 -03
+-- Started on 2019-12-20 18:06:54 -03
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -20,14 +20,12 @@ SET row_security = off;
 
 DROP DATABASE dbslr;
 --
--- TOC entry 3398 (class 1262 OID 16386)
--- Name: dbslr; Type: DATABASE; Schema: -; Owner: postgres
+-- TOC entry 3455 (class 1262 OID 16386)
+-- Name: dbslr; Type: DATABASE; Schema: -; Owner: -
 --
 
 CREATE DATABASE dbslr WITH TEMPLATE = template0 ENCODING = 'UTF8' LC_COLLATE = 'en_US.UTF-8' LC_CTYPE = 'en_US.UTF-8';
 
-
-ALTER DATABASE dbslr OWNER TO postgres;
 
 \connect dbslr
 
@@ -43,465 +41,374 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- TOC entry 6 (class 2615 OID 16387)
--- Name: slr; Type: SCHEMA; Schema: -; Owner: postgres
+-- TOC entry 8 (class 2615 OID 20429)
+-- Name: slr; Type: SCHEMA; Schema: -; Owner: -
 --
 
 CREATE SCHEMA slr;
 
 
-ALTER SCHEMA slr OWNER TO postgres;
-
 --
--- TOC entry 239 (class 1255 OID 16404)
--- Name: slr_author_iud(character varying, character varying); Type: FUNCTION; Schema: slr; Owner: postgres
+-- TOC entry 283 (class 1255 OID 20726)
+-- Name: slr_author_iud(character varying, integer, character varying, character varying, integer); Type: FUNCTION; Schema: slr; Owner: -
 --
 
-CREATE FUNCTION slr.slr_author_iud(procedimiento character varying, author_name character varying) RETURNS integer
+CREATE FUNCTION slr.slr_author_iud(procedimiento character varying, auth_id integer, home_page character varying, author_name character varying, depto_id integer, OUT author_id integer) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$BEGIN
+	IF procedimiento = 'AUTH_INS' THEN
+	
+		IF NOT EXISTS (SELECT 1 
+					   FROM slr.authors aut 
+					   WHERE lower(aut.names) = lower(author_name ) )
+		THEN
+		
+			INSERT INTO slr.authors(names,home_page,department_id) VALUES(author_name,home_page, depto_id);
+			select  max(id) ::integer into author_id 
+			from slr.authors;
+			
+		ELSE  
+			select aut.id::integer into author_id 
+			from slr.authors  aut
+			where lower(aut.names) = lower(author_name);
+		END IF;
+		
+		
+	END IF;
+
+END;$$;
+
+
+--
+-- TOC entry 284 (class 1255 OID 20741)
+-- Name: slr_author_publication_iud(character varying, integer, integer, character varying, integer, integer); Type: FUNCTION; Schema: slr; Owner: -
+--
+
+CREATE FUNCTION slr.slr_author_publication_iud(accion character varying, author_id integer, publication_id integer, publication_type character varying, limite integer, herarchy integer, OUT res character varying) RETURNS character varying
+    LANGUAGE plpgsql
+    AS $$declare
+pub record;
+auth record;
+public_id integer;
+auth_id integer; 
+depto_id integer;
+query_sql text := 'SELECT *
+				   FROM slr.dblp_publication p
+				   WHERE p.doc_type = '''|| publication_type || 
+				   '''  AND p.updated_state = ''1.inserted''  ';
+aux record;
+begin 
+	--@params : accion , publication_type
+	 if accion = 'AUTHPUB_INS'then
+	 	select dep.id into depto_id  
+		from slr.departments dep  where dep.id = 0; 
+		
+		if limite is not null AND limite > 0 then
+			query_sql = query_sql||' LIMIT '||limite||';' ;
+		end if;
+		
+		
+		for pub IN EXECUTE query_sql
+		loop
+			public_id = slr.slr_publication_iud('PUB_INS'::text,null,pub.title,pub.pages,
+						pub.year::integer,pub.address,pub.journal,pub.volume,
+						pub.number,pub.month,pub.url,pub.ee,pub.cite,pub.publisher,
+						pub.note,pub.crossref,pub.isbn,pub.series,pub,chapter,
+						pub.publnr,pub.mdate::date,pub.key_dblp,pub.doc_type);
+						
+			for auth in (select * from json_each_text(pub.authors) )
+			loop
+			
+				if(auth.key is not null AND char_length(auth.key) > 0) then
+					auth_id = slr.slr_author_iud('AUTH_INS',null,
+												 'DEFAULT HOME PAGE',
+												 auth.value,depto_id);
+				else
+					select a.id into auth_id 
+					from slr.authors aut 
+					where aut.id = 0; 
+				end if;
+				--insert author_publications
+				--raise notice ' autor %, public %',id_author,id_publication;
+				INSERT INTO slr.author_publications(herarchy,author_id,publication_id) 
+				VALUES(auth.key::INTEGER,auth_id,public_id);
+				
+			end loop;
+			--update row in public.dblp_publications
+			-- 1.inserted -> 2.process
+			update srl.dblp_publication
+			set	updated_state = '2.process'
+			where id = pub.id;
+			
+		end loop;
+	 end if;
+	 res = 'success';
+end;$$;
+
+
+--
+-- TOC entry 282 (class 1255 OID 20725)
+-- Name: slr_default_values(); Type: FUNCTION; Schema: slr; Owner: -
+--
+
+CREATE FUNCTION slr.slr_default_values() RETURNS character varying
+    LANGUAGE plpgsql
+    AS $$declare 
+res character;
+max_value integer;
+statements CURSOR FOR
+	    SELECT tablename FROM pg_tables p
+        WHERE p.tableowner = 'postgres' AND p.schemaname = 'slr'
+		AND p.tablename IN (
+			'countries', 'institutions','departments',
+			'authors','keywords','publishers',
+			'conferences','editions','journals','volume_numbers'
+		);
+
+begin 
+	--country
+	IF NOT EXISTS(SELECT 1 FROM slr.countries WHERE id = 0) THEN
+		INSERT INTO slr.countries(id,country_name,code) VALUES(0,'DEFAULT','DEFAULT');
+	END IF;
+	select id into max_value from slr.country where id = 0;
+	
+	--institution
+	IF NOT EXISTS(SELECT 1 FROM slr.institutions WHERE id = 0) THEN
+		INSERT INTO slr.institutions(id,country_id,description) VALUES(0,max_value,'DEFAULT');
+	END IF;
+	--department
+	if not EXISTS(SELECT 1 FROM slr.departments WHERE id = 0) then
+		--SELECT id into max_value FROM slr.institution WHERE id = 0;
+		INSERT INTO slr.departments(id,description,institution_id) VALUES(0,'DEFAULT',0);
+	end if;
+	--author
+	if not EXISTS(SELECT 1 FROM slr.authors WHERE id = 0) then
+		INSERT INTO slr.authors(id,names,department_id,home_page) VALUES(0,'DEFAULT',max_value,'DEFAULT');
+	end if;
+	--keyword
+	if not exists(select 1 from slr.keywords where id = 0) then
+		insert into slr.keywords(id,description) values(0,'DEFAULT');
+	end if;
+	--publisher
+	if not exists(select 1 from slr.publishers where id=0) then
+		insert into slr.publishers(id,description,state) values(0,'DEFAULT','active');
+	end if;
+	--conference
+	if not EXISTS(select 1 from slr.conferences where id = 0) then
+		insert into slr.conferences(id,description,abreviation) values(0,'DEFAULT','DEFAULT');
+	end if;
+	--edition
+	if not exists(select 1 from slr.editions where id = 0)then
+		insert into slr.editions(id,editors,year,number,conference_id,publisher_id) values(0,'DEFAULT',0,'0',max_value,max_value);
+	end if;
+	--journal
+	if not exists(select 1 from slr.journals where id = 0) then 
+		insert into slr.journals(id,name,abreviation) values(0,'DEFAULT','DEFAULT');
+	end if;
+	--volume_number
+	if not exists(select 1 from slr.volume_numbers where id = 0) then
+		insert into slr.volume_numbers(id,journal_id,publisher_id) values(0,max_value,max_value);
+	end if;
+
+return 'default values inserted';
+end;$$;
+
+
+--
+-- TOC entry 275 (class 1255 OID 20732)
+-- Name: slr_publication_iud(character varying, character varying, character varying, character varying, integer, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, character varying, date, character varying, character varying); Type: FUNCTION; Schema: slr; Owner: -
+--
+
+CREATE FUNCTION slr.slr_publication_iud(action character varying, abstract character varying, title character varying, pages character varying, year integer, address character varying, journal character varying, volume character varying, number character varying, month character varying, url character varying, ee character varying, cite character varying, publisher character varying, note character varying, crossref character varying, isbn character varying, series character varying, chapter character varying, publnr character varying, mdate date, dblp_key character varying, doc_type character varying, OUT publication_id integer) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$begin
+	if action = 'PUB_INS' then
+		
+		insert into slr.publications
+		(abstract,title,pages,year,address,journal,volume,number,
+		 month,url,ee,cite,publisher,note,crossref,isbn,series,
+		 chapter,publnr,mdate,dblp_key,doctype)
+		 values(abstract,title,pages,year,address,journal,volume,number,
+		 month,url,ee,cite,publisher,note,crossref,isbn,series,
+		 chapter,publnr,mdate,dblp_key,	doc_type);
+		
+		select MAX(id) into publication_id	from slr.publication;
+		 
+	end if;
+end;$$;
+
+
+--
+-- TOC entry 281 (class 1255 OID 20724)
+-- Name: slr_truncate_tables(character varying); Type: FUNCTION; Schema: slr; Owner: -
+--
+
+CREATE FUNCTION slr.slr_truncate_tables(username character varying) RETURNS void
     LANGUAGE plpgsql
     AS $$DECLARE
-author_id 	integer;
+    statements CURSOR FOR
+        SELECT tablename FROM pg_tables
+        WHERE tableowner = username AND schemaname = 'slr';
 BEGIN
+    FOR stmt IN statements LOOP
+        EXECUTE 'TRUNCATE TABLE ' ||'slr.'||quote_ident(stmt.tablename) || ' CASCADE;';
+    END LOOP;
+END;
+$$;
 
-	IF procedimiento = 'AUTH_INS' THEN
-		IF NOT EXISTS (SELECT 1 FROM slr.author WHERE names = author_name)
-		THEN
-			--split nombres previo al insert
-			INSERT INTO slr.author(names) VALUES(author_name);
-			select max(id) into author_id from slr.author;
-		ELSE 
-			select id into author_id 
-			from slr.author
-			where names = author_name;
-		END IF;
-	END IF;
-
-RETURN author_id;
-END;$$;
-
-
-ALTER FUNCTION slr.slr_author_iud(procedimiento character varying, author_name character varying) OWNER TO postgres;
-
---
--- TOC entry 252 (class 1255 OID 16405)
--- Name: slr_data_process_upd(character varying); Type: FUNCTION; Schema: slr; Owner: postgres
---
-
-CREATE FUNCTION slr.slr_data_process_upd(proceso character varying) RETURNS character varying
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-registros	record;
-articulos 	record;
-rec 		record;
-id_publication integer;
-id_author	integer;
-
-BEGIN
-
-	IF proceso = 'UPDATE_DATA' THEN
-		BEGIN
-			FOR registros IN (
-							SELECT *
-							FROM slr.dblp_document d
-							WHERE d.updated = false AND doc_type = 'article'
-							LIMIT 5
-							 )
-				LOOP
-					IF registros.doc_type = 'article' 
-					THEN
-						BEGIN
-							--llamada function procesar article
-							--REGISTRO DE PUBLICACION
-							INSERT INTO slr.publication(title,type) 
-							VALUES(registros.title,registros.doc_type);
-							SELECT MAX(id) INTO id_publication FROM slr.publication;
-							
-							for rec in (select * from json_each_text(registros.authors) ) 
-							loop
-								--raise notice '%,%',rec.key,rec.value;
-								if(rec.key is not null AND char_length(rec.key) > 0) then
-									id_author = slr.slr_author_iud('AUTH_INS',rec.value);
-									--insert author_publications
-									--raise notice ' autor %, public %',id_author,id_publication;
-									INSERT INTO slr.author_publications(author_id,publication_id,orden) 
-									VALUES(id_author,id_publication,rec.key::INTEGER);
-								end if;
-							end loop;	
-						END;
-					END IF;
-					--actualizacion updated = true en dblp_document
-					--update slr.dblp_document set updated = true where id = registros.id;
-				END LOOP;
-		END;
-	END IF;
-
-RETURN 'SUCCESS';
-END;$$;
-
-
-ALTER FUNCTION slr.slr_data_process_upd(proceso character varying) OWNER TO postgres;
 
 SET default_tablespace = '';
 
 SET default_with_oids = false;
 
 --
--- TOC entry 199 (class 1259 OID 16406)
--- Name: author; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.author (
-    id bigint NOT NULL,
-    names text,
-    created_at date DEFAULT now(),
-    department_id integer,
-    home_page character varying(200)
-);
-
-
-ALTER TABLE slr.author OWNER TO postgres;
-
---
--- TOC entry 200 (class 1259 OID 16413)
--- Name: author_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.author_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.author_id_seq OWNER TO postgres;
-
---
--- TOC entry 3399 (class 0 OID 0)
--- Dependencies: 200
--- Name: author_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.author_id_seq OWNED BY slr.author.id;
-
-
---
--- TOC entry 201 (class 1259 OID 16415)
--- Name: author_publications; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 244 (class 1259 OID 20447)
+-- Name: author_publications; Type: TABLE; Schema: slr; Owner: -
 --
 
 CREATE TABLE slr.author_publications (
-    id bigint NOT NULL,
-    author_id integer,
-    publication_id integer,
+    id bigint,
     herarchy integer,
-    create_at timestamp without time zone DEFAULT now()
+    author_id bigint,
+    publication_id bigint,
+    create_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.author_publications OWNER TO postgres;
-
 --
--- TOC entry 202 (class 1259 OID 16419)
--- Name: author_publications_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 243 (class 1259 OID 20439)
+-- Name: authors; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.author_publications_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.author_publications_id_seq OWNER TO postgres;
-
---
--- TOC entry 3400 (class 0 OID 0)
--- Dependencies: 202
--- Name: author_publications_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.author_publications_id_seq OWNED BY slr.author_publications.id;
+CREATE TABLE slr.authors (
+    id bigint NOT NULL,
+    names text,
+    email character varying(200) DEFAULT NULL::character varying,
+    picture_file text,
+    home_page text,
+    department_id integer,
+    created_at date DEFAULT now()
+);
 
 
 --
--- TOC entry 203 (class 1259 OID 16421)
--- Name: publication; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 242 (class 1259 OID 20430)
+-- Name: publications; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.publication (
-    id integer NOT NULL,
-    title text,
-    publication_type character varying(100),
+CREATE TABLE slr.publications (
+    id bigint NOT NULL,
     abstract text,
-    doi character varying(100),
+    title text,
+    pages character varying(100),
     year integer,
-    created_at timestamp without time zone DEFAULT now(),
-    key_dblp character varying(100),
-    pages character varying(50)
+    address text,
+    journal character varying(200),
+    volume character varying(255),
+    number character varying(255),
+    month character varying(255),
+    url text,
+    ee text,
+    cite text,
+    publisher text,
+    note text,
+    crossref text,
+    isbn text,
+    series text,
+    chapter text,
+    publnr text,
+    updated_state character varying(150),
+    mdate date,
+    dblp_key text,
+    doc_type character varying(100)
 );
 
 
-ALTER TABLE slr.publication OWNER TO postgres;
-
 --
--- TOC entry 204 (class 1259 OID 16428)
--- Name: book; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 253 (class 1259 OID 20598)
+-- Name: book_chapters; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.book (
-    year integer,
-    isbn character varying(100),
-    book_id integer NOT NULL,
+CREATE TABLE slr.book_chapters (
+    book_chapter_id bigint NOT NULL,
     publisher_id integer
 )
-INHERITS (slr.publication);
-
-
-ALTER TABLE slr.book OWNER TO postgres;
-
---
--- TOC entry 205 (class 1259 OID 16435)
--- Name: book_book_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.book_book_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.book_book_id_seq OWNER TO postgres;
-
---
--- TOC entry 3401 (class 0 OID 0)
--- Dependencies: 205
--- Name: book_book_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.book_book_id_seq OWNED BY slr.book.book_id;
+INHERITS (slr.publications);
 
 
 --
--- TOC entry 206 (class 1259 OID 16437)
--- Name: book_chapter; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 252 (class 1259 OID 20591)
+-- Name: books; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.book_chapter (
-    pages character varying(50),
-    book_chapter_id integer NOT NULL,
+CREATE TABLE slr.books (
+    book_id bigint NOT NULL,
     publisher_id integer
 )
-INHERITS (slr.publication);
-
-
-ALTER TABLE slr.book_chapter OWNER TO postgres;
-
---
--- TOC entry 207 (class 1259 OID 16444)
--- Name: book_chapter_book_chapter_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.book_chapter_book_chapter_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.book_chapter_book_chapter_id_seq OWNER TO postgres;
-
---
--- TOC entry 3402 (class 0 OID 0)
--- Dependencies: 207
--- Name: book_chapter_book_chapter_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.book_chapter_book_chapter_id_seq OWNED BY slr.book_chapter.book_chapter_id;
+INHERITS (slr.publications);
 
 
 --
--- TOC entry 208 (class 1259 OID 16446)
--- Name: conference; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 255 (class 1259 OID 20612)
+-- Name: conferece_editorials; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.conference (
-    id integer NOT NULL,
-    description text
-);
-
-
-ALTER TABLE slr.conference OWNER TO postgres;
-
---
--- TOC entry 209 (class 1259 OID 16452)
--- Name: conference_editorial; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.conference_editorial (
+CREATE TABLE slr.conferece_editorials (
     conference_editorial_id integer NOT NULL,
     edition_id integer
 )
-INHERITS (slr.publication);
-
-
-ALTER TABLE slr.conference_editorial OWNER TO postgres;
-
---
--- TOC entry 210 (class 1259 OID 16459)
--- Name: conference_editorial_conference_editorial_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.conference_editorial_conference_editorial_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.conference_editorial_conference_editorial_id_seq OWNER TO postgres;
-
---
--- TOC entry 3403 (class 0 OID 0)
--- Dependencies: 210
--- Name: conference_editorial_conference_editorial_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.conference_editorial_conference_editorial_id_seq OWNED BY slr.conference_editorial.conference_editorial_id;
+INHERITS (slr.publications);
 
 
 --
--- TOC entry 211 (class 1259 OID 16461)
--- Name: conference_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 254 (class 1259 OID 20605)
+-- Name: conferece_papers; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.conference_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.conference_id_seq OWNER TO postgres;
-
---
--- TOC entry 3404 (class 0 OID 0)
--- Dependencies: 211
--- Name: conference_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.conference_id_seq OWNED BY slr.conference.id;
-
-
---
--- TOC entry 212 (class 1259 OID 16463)
--- Name: conference_paper; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.conference_paper (
-    conference_paper_id integer NOT NULL,
+CREATE TABLE slr.conferece_papers (
+    conference_paper_id bigint NOT NULL,
     edition_id integer
 )
-INHERITS (slr.publication);
-
-
-ALTER TABLE slr.conference_paper OWNER TO postgres;
-
---
--- TOC entry 213 (class 1259 OID 16470)
--- Name: conference_paper_conference_paper_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.conference_paper_conference_paper_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.conference_paper_conference_paper_id_seq OWNER TO postgres;
-
---
--- TOC entry 3405 (class 0 OID 0)
--- Dependencies: 213
--- Name: conference_paper_conference_paper_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.conference_paper_conference_paper_id_seq OWNED BY slr.conference_paper.conference_paper_id;
+INHERITS (slr.publications);
 
 
 --
--- TOC entry 214 (class 1259 OID 16472)
--- Name: country; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 249 (class 1259 OID 20486)
+-- Name: conferences; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.country (
-    id integer NOT NULL,
-    description text
+CREATE TABLE slr.conferences (
+    id bigint NOT NULL,
+    description text,
+    abreviation character varying(200),
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.country OWNER TO postgres;
-
 --
--- TOC entry 215 (class 1259 OID 16478)
--- Name: country_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 245 (class 1259 OID 20450)
+-- Name: countries; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.country_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.country_id_seq OWNER TO postgres;
-
---
--- TOC entry 3406 (class 0 OID 0)
--- Dependencies: 215
--- Name: country_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.country_id_seq OWNED BY slr.country.id;
+CREATE TABLE slr.countries (
+    id bigint NOT NULL,
+    country_name character varying(255),
+    code character varying(5),
+    created_at date DEFAULT now()
+);
 
 
 --
--- TOC entry 216 (class 1259 OID 16480)
--- Name: dblp_document_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 240 (class 1259 OID 20034)
+-- Name: dblp_publication; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.dblp_document_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.dblp_document_id_seq OWNER TO postgres;
-
---
--- TOC entry 217 (class 1259 OID 16482)
--- Name: dblp_document; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.dblp_document (
-    id integer DEFAULT nextval('slr.dblp_document_id_seq'::regclass) NOT NULL,
-    key_dblp character varying(100),
+CREATE TABLE slr.dblp_publication (
+    id integer DEFAULT nextval('public.dblp_publication_id_seq'::regclass) NOT NULL,
+    key_dblp character varying(200),
     authors json,
     doc_type character varying(100),
     editor character varying(100),
-    booktitle character varying(250),
     pages character varying(50),
     year integer,
     title text,
@@ -522,852 +429,285 @@ CREATE TABLE slr.dblp_document (
     school text,
     chapter text,
     publnr text,
-    unknow_fields json,
-    unknow_atts json,
     mdate character varying(100),
-    updated boolean DEFAULT false
+    reg_date date DEFAULT now(),
+    updated_state character varying(100) DEFAULT '1.inserted'::character varying
 );
 
 
-ALTER TABLE slr.dblp_document OWNER TO postgres;
-
 --
--- TOC entry 218 (class 1259 OID 16490)
--- Name: department; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 251 (class 1259 OID 20535)
+-- Name: departments; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.department (
-    id integer NOT NULL,
+CREATE TABLE slr.departments (
+    id bigint NOT NULL,
     description text,
-    institution_id integer
+    "position" character varying(255),
+    skills text,
+    institution_id integer,
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.department OWNER TO postgres;
-
 --
--- TOC entry 219 (class 1259 OID 16496)
--- Name: department_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 258 (class 1259 OID 20647)
+-- Name: editions; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.department_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.department_id_seq OWNER TO postgres;
-
---
--- TOC entry 3407 (class 0 OID 0)
--- Dependencies: 219
--- Name: department_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.department_id_seq OWNED BY slr.department.id;
-
-
---
--- TOC entry 220 (class 1259 OID 16498)
--- Name: edition; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.edition (
-    id integer NOT NULL,
-    description text,
+CREATE TABLE slr.editions (
+    id bigint NOT NULL,
+    editors text,
+    year integer,
+    number character varying(100),
     conference_id integer,
-    publisher_id integer
+    publisher_id integer,
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.edition OWNER TO postgres;
-
 --
--- TOC entry 221 (class 1259 OID 16504)
--- Name: edition_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 246 (class 1259 OID 20456)
+-- Name: institutions; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.edition_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.edition_id_seq OWNER TO postgres;
-
---
--- TOC entry 3408 (class 0 OID 0)
--- Dependencies: 221
--- Name: edition_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.edition_id_seq OWNED BY slr.edition.id;
-
-
---
--- TOC entry 222 (class 1259 OID 16506)
--- Name: institution; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.institution (
-    id integer NOT NULL,
+CREATE TABLE slr.institutions (
+    id bigint NOT NULL,
+    description text,
     country_id integer,
-    description text
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.institution OWNER TO postgres;
-
 --
--- TOC entry 223 (class 1259 OID 16512)
--- Name: institution_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 256 (class 1259 OID 20619)
+-- Name: journal_editorials; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.institution_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.institution_id_seq OWNER TO postgres;
-
---
--- TOC entry 3409 (class 0 OID 0)
--- Dependencies: 223
--- Name: institution_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.institution_id_seq OWNED BY slr.institution.id;
-
-
---
--- TOC entry 224 (class 1259 OID 16514)
--- Name: journal; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.journal (
-    id integer NOT NULL,
-    description text
-);
-
-
-ALTER TABLE slr.journal OWNER TO postgres;
-
---
--- TOC entry 225 (class 1259 OID 16520)
--- Name: journal_editorial; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.journal_editorial (
-    journal_editorial_id integer NOT NULL,
+CREATE TABLE slr.journal_editorials (
+    journal_editorial_id bigint NOT NULL,
     volume_number_id integer
 )
-INHERITS (slr.publication);
-
-
-ALTER TABLE slr.journal_editorial OWNER TO postgres;
-
---
--- TOC entry 226 (class 1259 OID 16527)
--- Name: journal_editorial_journal_editorial_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.journal_editorial_journal_editorial_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.journal_editorial_journal_editorial_id_seq OWNER TO postgres;
-
---
--- TOC entry 3410 (class 0 OID 0)
--- Dependencies: 226
--- Name: journal_editorial_journal_editorial_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.journal_editorial_journal_editorial_id_seq OWNED BY slr.journal_editorial.journal_editorial_id;
+INHERITS (slr.publications);
 
 
 --
--- TOC entry 227 (class 1259 OID 16529)
--- Name: journal_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 257 (class 1259 OID 20626)
+-- Name: journal_papers; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.journal_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.journal_id_seq OWNER TO postgres;
-
---
--- TOC entry 3411 (class 0 OID 0)
--- Dependencies: 227
--- Name: journal_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.journal_id_seq OWNED BY slr.journal.id;
-
-
---
--- TOC entry 228 (class 1259 OID 16531)
--- Name: journal_paper; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.journal_paper (
-    journal_paper_id integer NOT NULL,
+CREATE TABLE slr.journal_papers (
+    journal_paper_id bigint NOT NULL,
     volume_number_id integer
 )
-INHERITS (slr.publication);
-
-
-ALTER TABLE slr.journal_paper OWNER TO postgres;
-
---
--- TOC entry 229 (class 1259 OID 16538)
--- Name: journal_paper_journal_paper_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.journal_paper_journal_paper_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.journal_paper_journal_paper_id_seq OWNER TO postgres;
-
---
--- TOC entry 3412 (class 0 OID 0)
--- Dependencies: 229
--- Name: journal_paper_journal_paper_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.journal_paper_journal_paper_id_seq OWNED BY slr.journal_paper.journal_paper_id;
+INHERITS (slr.publications);
 
 
 --
--- TOC entry 230 (class 1259 OID 16540)
--- Name: keyword; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 260 (class 1259 OID 20692)
+-- Name: journals; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE TABLE slr.keyword (
-    id integer NOT NULL,
-    name character varying(255)
+CREATE TABLE slr.journals (
+    id bigint NOT NULL,
+    name text,
+    abreviation character varying(255),
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.keyword OWNER TO postgres;
-
 --
--- TOC entry 231 (class 1259 OID 16543)
--- Name: keyword_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 247 (class 1259 OID 20474)
+-- Name: keywords; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.keyword_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.keyword_id_seq OWNER TO postgres;
-
---
--- TOC entry 3413 (class 0 OID 0)
--- Dependencies: 231
--- Name: keyword_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.keyword_id_seq OWNED BY slr.keyword.id;
+CREATE TABLE slr.keywords (
+    id bigint NOT NULL,
+    decription character varying(255),
+    created_at date DEFAULT now()
+);
 
 
 --
--- TOC entry 232 (class 1259 OID 16545)
--- Name: publication_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.publication_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.publication_id_seq OWNER TO postgres;
-
---
--- TOC entry 3414 (class 0 OID 0)
--- Dependencies: 232
--- Name: publication_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.publication_id_seq OWNED BY slr.publication.id;
-
-
---
--- TOC entry 233 (class 1259 OID 16547)
--- Name: publication_keywords; Type: TABLE; Schema: slr; Owner: postgres
+-- TOC entry 248 (class 1259 OID 20480)
+-- Name: publication_keywords; Type: TABLE; Schema: slr; Owner: -
 --
 
 CREATE TABLE slr.publication_keywords (
-    id integer NOT NULL,
+    id bigint NOT NULL,
+    keyword_id integer,
     publication_id integer,
-    keyword_id integer
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.publication_keywords OWNER TO postgres;
-
 --
--- TOC entry 234 (class 1259 OID 16550)
--- Name: publication_keywords_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 250 (class 1259 OID 20495)
+-- Name: publishers; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.publication_keywords_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.publication_keywords_id_seq OWNER TO postgres;
-
---
--- TOC entry 3415 (class 0 OID 0)
--- Dependencies: 234
--- Name: publication_keywords_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.publication_keywords_id_seq OWNED BY slr.publication_keywords.id;
-
-
---
--- TOC entry 198 (class 1259 OID 16390)
--- Name: publisher; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.publisher (
+CREATE TABLE slr.publishers (
     id bigint NOT NULL,
     description text,
-    state character varying(80) DEFAULT 'activo'::character varying
+    state character varying(200) DEFAULT 'active'::character varying,
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.publisher OWNER TO postgres;
-
 --
--- TOC entry 197 (class 1259 OID 16388)
--- Name: publisher_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
+-- TOC entry 259 (class 1259 OID 20679)
+-- Name: volume_numbers; Type: TABLE; Schema: slr; Owner: -
 --
 
-CREATE SEQUENCE slr.publisher_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.publisher_id_seq OWNER TO postgres;
-
---
--- TOC entry 3416 (class 0 OID 0)
--- Dependencies: 197
--- Name: publisher_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.publisher_id_seq OWNED BY slr.publisher.id;
-
-
---
--- TOC entry 235 (class 1259 OID 16552)
--- Name: test; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.test (
-    id integer NOT NULL,
-    cadena json,
-    numero integer
-);
-
-
-ALTER TABLE slr.test OWNER TO postgres;
-
---
--- TOC entry 236 (class 1259 OID 16558)
--- Name: test_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.test_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.test_id_seq OWNER TO postgres;
-
---
--- TOC entry 3417 (class 0 OID 0)
--- Dependencies: 236
--- Name: test_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.test_id_seq OWNED BY slr.test.id;
-
-
---
--- TOC entry 237 (class 1259 OID 16560)
--- Name: volume_number; Type: TABLE; Schema: slr; Owner: postgres
---
-
-CREATE TABLE slr.volume_number (
-    id integer NOT NULL,
+CREATE TABLE slr.volume_numbers (
+    id bigint NOT NULL,
     volume integer,
     number integer,
+    pages text,
+    publisher_id integer,
     journal_id integer,
-    publisher_id integer
+    created_at date DEFAULT now()
 );
 
 
-ALTER TABLE slr.volume_number OWNER TO postgres;
-
---
--- TOC entry 238 (class 1259 OID 16563)
--- Name: volume_number_id_seq; Type: SEQUENCE; Schema: slr; Owner: postgres
---
-
-CREATE SEQUENCE slr.volume_number_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE slr.volume_number_id_seq OWNER TO postgres;
-
---
--- TOC entry 3418 (class 0 OID 0)
--- Dependencies: 238
--- Name: volume_number_id_seq; Type: SEQUENCE OWNED BY; Schema: slr; Owner: postgres
---
-
-ALTER SEQUENCE slr.volume_number_id_seq OWNED BY slr.volume_number.id;
-
-
---
--- TOC entry 3180 (class 2604 OID 16565)
--- Name: author id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.author ALTER COLUMN id SET DEFAULT nextval('slr.author_id_seq'::regclass);
-
-
---
--- TOC entry 3182 (class 2604 OID 16566)
--- Name: author_publications id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.author_publications ALTER COLUMN id SET DEFAULT nextval('slr.author_publications_id_seq'::regclass);
-
-
---
--- TOC entry 3185 (class 2604 OID 16567)
--- Name: book id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3187 (class 2604 OID 16569)
--- Name: book created_at; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book ALTER COLUMN created_at SET DEFAULT now();
-
-
---
--- TOC entry 3186 (class 2604 OID 16568)
--- Name: book book_id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book ALTER COLUMN book_id SET DEFAULT nextval('slr.book_book_id_seq'::regclass);
-
-
---
--- TOC entry 3188 (class 2604 OID 16570)
--- Name: book_chapter id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book_chapter ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3190 (class 2604 OID 16572)
--- Name: book_chapter created_at; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book_chapter ALTER COLUMN created_at SET DEFAULT now();
-
-
---
--- TOC entry 3189 (class 2604 OID 16571)
--- Name: book_chapter book_chapter_id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book_chapter ALTER COLUMN book_chapter_id SET DEFAULT nextval('slr.book_chapter_book_chapter_id_seq'::regclass);
-
-
---
--- TOC entry 3191 (class 2604 OID 16573)
--- Name: conference id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference ALTER COLUMN id SET DEFAULT nextval('slr.conference_id_seq'::regclass);
-
-
---
--- TOC entry 3192 (class 2604 OID 16574)
--- Name: conference_editorial id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_editorial ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3194 (class 2604 OID 16576)
--- Name: conference_editorial created_at; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_editorial ALTER COLUMN created_at SET DEFAULT now();
-
-
---
--- TOC entry 3193 (class 2604 OID 16575)
--- Name: conference_editorial conference_editorial_id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_editorial ALTER COLUMN conference_editorial_id SET DEFAULT nextval('slr.conference_editorial_conference_editorial_id_seq'::regclass);
-
-
---
--- TOC entry 3195 (class 2604 OID 16577)
--- Name: conference_paper id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_paper ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3197 (class 2604 OID 16579)
--- Name: conference_paper created_at; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_paper ALTER COLUMN created_at SET DEFAULT now();
-
-
---
--- TOC entry 3196 (class 2604 OID 16578)
--- Name: conference_paper conference_paper_id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_paper ALTER COLUMN conference_paper_id SET DEFAULT nextval('slr.conference_paper_conference_paper_id_seq'::regclass);
-
-
---
--- TOC entry 3198 (class 2604 OID 16580)
--- Name: country id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.country ALTER COLUMN id SET DEFAULT nextval('slr.country_id_seq'::regclass);
-
-
---
--- TOC entry 3201 (class 2604 OID 16581)
--- Name: department id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.department ALTER COLUMN id SET DEFAULT nextval('slr.department_id_seq'::regclass);
-
-
---
--- TOC entry 3202 (class 2604 OID 16582)
--- Name: edition id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.edition ALTER COLUMN id SET DEFAULT nextval('slr.edition_id_seq'::regclass);
-
-
---
--- TOC entry 3203 (class 2604 OID 16583)
--- Name: institution id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.institution ALTER COLUMN id SET DEFAULT nextval('slr.institution_id_seq'::regclass);
-
-
---
--- TOC entry 3204 (class 2604 OID 16584)
--- Name: journal id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal ALTER COLUMN id SET DEFAULT nextval('slr.journal_id_seq'::regclass);
-
-
---
--- TOC entry 3205 (class 2604 OID 16585)
--- Name: journal_editorial id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal_editorial ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3207 (class 2604 OID 16587)
--- Name: journal_editorial created_at; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal_editorial ALTER COLUMN created_at SET DEFAULT now();
-
-
---
--- TOC entry 3206 (class 2604 OID 16586)
--- Name: journal_editorial journal_editorial_id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal_editorial ALTER COLUMN journal_editorial_id SET DEFAULT nextval('slr.journal_editorial_journal_editorial_id_seq'::regclass);
-
-
---
--- TOC entry 3208 (class 2604 OID 16588)
--- Name: journal_paper id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal_paper ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3210 (class 2604 OID 16590)
--- Name: journal_paper created_at; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal_paper ALTER COLUMN created_at SET DEFAULT now();
-
-
---
--- TOC entry 3209 (class 2604 OID 16589)
--- Name: journal_paper journal_paper_id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.journal_paper ALTER COLUMN journal_paper_id SET DEFAULT nextval('slr.journal_paper_journal_paper_id_seq'::regclass);
-
-
---
--- TOC entry 3211 (class 2604 OID 16591)
--- Name: keyword id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.keyword ALTER COLUMN id SET DEFAULT nextval('slr.keyword_id_seq'::regclass);
-
-
---
--- TOC entry 3184 (class 2604 OID 16592)
--- Name: publication id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.publication ALTER COLUMN id SET DEFAULT nextval('slr.publication_id_seq'::regclass);
-
-
---
--- TOC entry 3212 (class 2604 OID 16593)
--- Name: publication_keywords id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.publication_keywords ALTER COLUMN id SET DEFAULT nextval('slr.publication_keywords_id_seq'::regclass);
-
-
---
--- TOC entry 3178 (class 2604 OID 16594)
--- Name: publisher id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.publisher ALTER COLUMN id SET DEFAULT nextval('slr.publisher_id_seq'::regclass);
-
-
---
--- TOC entry 3213 (class 2604 OID 16595)
--- Name: test id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.test ALTER COLUMN id SET DEFAULT nextval('slr.test_id_seq'::regclass);
-
-
---
--- TOC entry 3214 (class 2604 OID 16596)
--- Name: volume_number id; Type: DEFAULT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.volume_number ALTER COLUMN id SET DEFAULT nextval('slr.volume_number_id_seq'::regclass);
-
-
 --
--- TOC entry 3218 (class 2606 OID 16598)
--- Name: author author_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3279 (class 2606 OID 20446)
+-- Name: authors authors_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.author
-    ADD CONSTRAINT author_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.authors
+    ADD CONSTRAINT authors_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3220 (class 2606 OID 16600)
--- Name: author_publications author_publications_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3297 (class 2606 OID 20634)
+-- Name: book_chapters book_chapters_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.author_publications
-    ADD CONSTRAINT author_publications_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.book_chapters
+    ADD CONSTRAINT book_chapters_pkey PRIMARY KEY (book_chapter_id);
 
 
 --
--- TOC entry 3226 (class 2606 OID 16602)
--- Name: book_chapter book_chapter_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3295 (class 2606 OID 20641)
+-- Name: books books_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.book_chapter
-    ADD CONSTRAINT book_chapter_pkey PRIMARY KEY (book_chapter_id);
+ALTER TABLE ONLY slr.books
+    ADD CONSTRAINT books_pkey PRIMARY KEY (book_id);
 
 
 --
--- TOC entry 3224 (class 2606 OID 16604)
--- Name: book book_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3301 (class 2606 OID 20666)
+-- Name: conferece_editorials conferece_editorials_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.book
-    ADD CONSTRAINT book_pkey PRIMARY KEY (book_id);
+ALTER TABLE ONLY slr.conferece_editorials
+    ADD CONSTRAINT conferece_editorials_pkey PRIMARY KEY (conference_editorial_id);
 
 
 --
--- TOC entry 3230 (class 2606 OID 16606)
--- Name: conference_editorial conference_editorial_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3299 (class 2606 OID 20673)
+-- Name: conferece_papers conferece_papers_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.conference_editorial
-    ADD CONSTRAINT conference_editorial_pkey PRIMARY KEY (conference_editorial_id);
+ALTER TABLE ONLY slr.conferece_papers
+    ADD CONSTRAINT conferece_papers_pkey PRIMARY KEY (conference_paper_id);
 
 
 --
--- TOC entry 3232 (class 2606 OID 16608)
--- Name: conference_paper conference_paper_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3289 (class 2606 OID 20494)
+-- Name: conferences conferences_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.conference_paper
-    ADD CONSTRAINT conference_paper_pkey PRIMARY KEY (conference_paper_id);
+ALTER TABLE ONLY slr.conferences
+    ADD CONSTRAINT conferences_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3228 (class 2606 OID 16610)
--- Name: conference conference_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3281 (class 2606 OID 20455)
+-- Name: countries countries_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.conference
-    ADD CONSTRAINT conference_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.countries
+    ADD CONSTRAINT countries_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3234 (class 2606 OID 16612)
--- Name: country country_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3275 (class 2606 OID 20042)
+-- Name: dblp_publication dblp_publication_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.country
-    ADD CONSTRAINT country_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.dblp_publication
+    ADD CONSTRAINT dblp_publication_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3236 (class 2606 OID 16614)
--- Name: department department_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3293 (class 2606 OID 20543)
+-- Name: departments departments_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.department
-    ADD CONSTRAINT department_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.departments
+    ADD CONSTRAINT departments_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3238 (class 2606 OID 16616)
--- Name: edition edition_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3307 (class 2606 OID 20654)
+-- Name: editions editions_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.edition
-    ADD CONSTRAINT edition_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.editions
+    ADD CONSTRAINT editions_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3240 (class 2606 OID 16618)
--- Name: institution institution_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3283 (class 2606 OID 20464)
+-- Name: institutions institutions_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.institution
-    ADD CONSTRAINT institution_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.institutions
+    ADD CONSTRAINT institutions_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3244 (class 2606 OID 16620)
--- Name: journal_editorial journal_editorial_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3303 (class 2606 OID 20715)
+-- Name: journal_editorials journal_editorials_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.journal_editorial
-    ADD CONSTRAINT journal_editorial_pkey PRIMARY KEY (journal_editorial_id);
+ALTER TABLE ONLY slr.journal_editorials
+    ADD CONSTRAINT journal_editorials_pkey PRIMARY KEY (journal_editorial_id);
 
 
 --
--- TOC entry 3246 (class 2606 OID 16622)
--- Name: journal_paper journal_paper_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3305 (class 2606 OID 20708)
+-- Name: journal_papers journal_papers_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.journal_paper
-    ADD CONSTRAINT journal_paper_pkey PRIMARY KEY (journal_paper_id);
+ALTER TABLE ONLY slr.journal_papers
+    ADD CONSTRAINT journal_papers_pkey PRIMARY KEY (journal_paper_id);
 
 
 --
--- TOC entry 3242 (class 2606 OID 16624)
--- Name: journal journal_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3311 (class 2606 OID 20701)
+-- Name: journals journals_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.journal
-    ADD CONSTRAINT journal_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.journals
+    ADD CONSTRAINT journals_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3248 (class 2606 OID 16626)
--- Name: keyword keyword_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3285 (class 2606 OID 20479)
+-- Name: keywords keywords_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.keyword
-    ADD CONSTRAINT keyword_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.keywords
+    ADD CONSTRAINT keywords_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3250 (class 2606 OID 16628)
--- Name: publication_keywords publication_keywords_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3287 (class 2606 OID 20485)
+-- Name: publication_keywords publication_keywords_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
 ALTER TABLE ONLY slr.publication_keywords
@@ -1375,195 +715,186 @@ ALTER TABLE ONLY slr.publication_keywords
 
 
 --
--- TOC entry 3222 (class 2606 OID 16630)
--- Name: publication publication_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3277 (class 2606 OID 20438)
+-- Name: publications publication_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.publication
+ALTER TABLE ONLY slr.publications
     ADD CONSTRAINT publication_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3216 (class 2606 OID 16398)
--- Name: publisher publisher_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3291 (class 2606 OID 20503)
+-- Name: publishers publishers_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.publisher
-    ADD CONSTRAINT publisher_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3252 (class 2606 OID 16632)
--- Name: test test_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.test
-    ADD CONSTRAINT test_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY slr.publishers
+    ADD CONSTRAINT publishers_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3254 (class 2606 OID 16634)
--- Name: volume_number volume_number_pkey; Type: CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3309 (class 2606 OID 20686)
+-- Name: volume_numbers volume_numbers_pkey; Type: CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.volume_number
-    ADD CONSTRAINT volume_number_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3256 (class 2606 OID 16635)
--- Name: author_publications author__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.author_publications
-    ADD CONSTRAINT author__id_fk FOREIGN KEY (author_id) REFERENCES slr.author(id);
+ALTER TABLE ONLY slr.volume_numbers
+    ADD CONSTRAINT volume_numbers_pkey PRIMARY KEY (id);
 
 
 --
--- TOC entry 3263 (class 2606 OID 16640)
--- Name: edition conference__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3312 (class 2606 OID 20557)
+-- Name: authors fk_author__department; Type: FK CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.edition
-    ADD CONSTRAINT conference__id_fk FOREIGN KEY (conference_id) REFERENCES slr.conference(id);
-
-
---
--- TOC entry 3265 (class 2606 OID 16645)
--- Name: institution country__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.institution
-    ADD CONSTRAINT country__id_fk FOREIGN KEY (country_id) REFERENCES slr.country(id);
+ALTER TABLE ONLY slr.authors
+    ADD CONSTRAINT fk_author__department FOREIGN KEY (department_id) REFERENCES slr.departments(id);
 
 
 --
--- TOC entry 3255 (class 2606 OID 16650)
--- Name: author department__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.author
-    ADD CONSTRAINT department__id_fk FOREIGN KEY (department_id) REFERENCES slr.department(id);
-
-
---
--- TOC entry 3260 (class 2606 OID 16655)
--- Name: conference_editorial edition__id_fk2; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_editorial
-    ADD CONSTRAINT edition__id_fk2 FOREIGN KEY (edition_id) REFERENCES slr.edition(id);
-
-
---
--- TOC entry 3261 (class 2606 OID 16660)
--- Name: conference_paper edition_paper_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.conference_paper
-    ADD CONSTRAINT edition_paper_id_fk FOREIGN KEY (edition_id) REFERENCES slr.edition(id);
-
-
---
--- TOC entry 3262 (class 2606 OID 16665)
--- Name: department institutio__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.department
-    ADD CONSTRAINT institutio__id_fk FOREIGN KEY (institution_id) REFERENCES slr.institution(id);
-
-
---
--- TOC entry 3270 (class 2606 OID 16670)
--- Name: volume_number journal__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.volume_number
-    ADD CONSTRAINT journal__id_fk FOREIGN KEY (journal_id) REFERENCES slr.journal(id);
-
-
---
--- TOC entry 3268 (class 2606 OID 16675)
--- Name: publication_keywords keyword__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.publication_keywords
-    ADD CONSTRAINT keyword__id_fk FOREIGN KEY (keyword_id) REFERENCES slr.keyword(id);
-
-
---
--- TOC entry 3269 (class 2606 OID 16685)
--- Name: publication_keywords publication__keywords_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.publication_keywords
-    ADD CONSTRAINT publication__keywords_id_fk FOREIGN KEY (publication_id) REFERENCES slr.publication(id);
-
-
---
--- TOC entry 3257 (class 2606 OID 16680)
--- Name: author_publications publication_author_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3314 (class 2606 OID 20562)
+-- Name: author_publications fk_author_publication__author; Type: FK CONSTRAINT; Schema: slr; Owner: -
 --
 
 ALTER TABLE ONLY slr.author_publications
-    ADD CONSTRAINT publication_author_id_fk FOREIGN KEY (publication_id) REFERENCES slr.publication(id);
+    ADD CONSTRAINT fk_author_publication__author FOREIGN KEY (author_id) REFERENCES slr.authors(id);
 
 
 --
--- TOC entry 3258 (class 2606 OID 16690)
--- Name: book publisher_book_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3313 (class 2606 OID 20567)
+-- Name: author_publications fk_author_publication__publication; Type: FK CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.book
-    ADD CONSTRAINT publisher_book_id_fk FOREIGN KEY (publisher_id) REFERENCES slr.publisher(id);
-
-
---
--- TOC entry 3259 (class 2606 OID 16695)
--- Name: book_chapter publisher_bookchapter_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.book_chapter
-    ADD CONSTRAINT publisher_bookchapter_id_fk FOREIGN KEY (publisher_id) REFERENCES slr.publisher(id);
+ALTER TABLE ONLY slr.author_publications
+    ADD CONSTRAINT fk_author_publication__publication FOREIGN KEY (publication_id) REFERENCES slr.publications(id);
 
 
 --
--- TOC entry 3264 (class 2606 OID 16792)
--- Name: edition publisher_edition__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3319 (class 2606 OID 20642)
+-- Name: books fk_book__publisher; Type: FK CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.edition
-    ADD CONSTRAINT publisher_edition__id_fk FOREIGN KEY (publisher_id) REFERENCES slr.publisher(id);
-
-
---
--- TOC entry 3271 (class 2606 OID 16797)
--- Name: volume_number publisher_volume__id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
---
-
-ALTER TABLE ONLY slr.volume_number
-    ADD CONSTRAINT publisher_volume__id_fk FOREIGN KEY (publisher_id) REFERENCES slr.publisher(id);
+ALTER TABLE ONLY slr.books
+    ADD CONSTRAINT fk_book__publisher FOREIGN KEY (publisher_id) REFERENCES slr.publishers(id);
 
 
 --
--- TOC entry 3266 (class 2606 OID 16700)
--- Name: journal_editorial volume_number_journaleditorial_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3320 (class 2606 OID 20635)
+-- Name: book_chapters fk_book_chapter__publisher; Type: FK CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.journal_editorial
-    ADD CONSTRAINT volume_number_journaleditorial_id_fk FOREIGN KEY (volume_number_id) REFERENCES slr.volume_number(id);
+ALTER TABLE ONLY slr.book_chapters
+    ADD CONSTRAINT fk_book_chapter__publisher FOREIGN KEY (publisher_id) REFERENCES slr.publishers(id);
 
 
 --
--- TOC entry 3267 (class 2606 OID 16705)
--- Name: journal_paper volume_number_journalpaper_id_fk; Type: FK CONSTRAINT; Schema: slr; Owner: postgres
+-- TOC entry 3321 (class 2606 OID 20674)
+-- Name: conferece_papers fk_conferece_paper__edition; Type: FK CONSTRAINT; Schema: slr; Owner: -
 --
 
-ALTER TABLE ONLY slr.journal_paper
-    ADD CONSTRAINT volume_number_journalpaper_id_fk FOREIGN KEY (volume_number_id) REFERENCES slr.volume_number(id);
+ALTER TABLE ONLY slr.conferece_papers
+    ADD CONSTRAINT fk_conferece_paper__edition FOREIGN KEY (edition_id) REFERENCES slr.editions(id);
 
 
--- Completed on 2019-09-29 03:44:39 -03
+--
+-- TOC entry 3322 (class 2606 OID 20667)
+-- Name: conferece_editorials fk_conference_editorial__edition; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.conferece_editorials
+    ADD CONSTRAINT fk_conference_editorial__edition FOREIGN KEY (edition_id) REFERENCES slr.editions(id);
+
+
+--
+-- TOC entry 3318 (class 2606 OID 20550)
+-- Name: departments fk_department__institution; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.departments
+    ADD CONSTRAINT fk_department__institution FOREIGN KEY (institution_id) REFERENCES slr.institutions(id);
+
+
+--
+-- TOC entry 3325 (class 2606 OID 20660)
+-- Name: editions fk_edition__conference; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.editions
+    ADD CONSTRAINT fk_edition__conference FOREIGN KEY (conference_id) REFERENCES slr.conferences(id);
+
+
+--
+-- TOC entry 3326 (class 2606 OID 20655)
+-- Name: editions fk_edition__publisher; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.editions
+    ADD CONSTRAINT fk_edition__publisher FOREIGN KEY (publisher_id) REFERENCES slr.publishers(id);
+
+
+--
+-- TOC entry 3315 (class 2606 OID 20545)
+-- Name: institutions fk_institution__country; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.institutions
+    ADD CONSTRAINT fk_institution__country FOREIGN KEY (country_id) REFERENCES slr.countries(id);
+
+
+--
+-- TOC entry 3323 (class 2606 OID 20716)
+-- Name: journal_editorials fk_journal_editorial__volume_number; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.journal_editorials
+    ADD CONSTRAINT fk_journal_editorial__volume_number FOREIGN KEY (volume_number_id) REFERENCES slr.volume_numbers(id);
+
+
+--
+-- TOC entry 3324 (class 2606 OID 20709)
+-- Name: journal_papers fk_journal_paper__volume_number; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.journal_papers
+    ADD CONSTRAINT fk_journal_paper__volume_number FOREIGN KEY (volume_number_id) REFERENCES slr.volume_numbers(id);
+
+
+--
+-- TOC entry 3317 (class 2606 OID 20577)
+-- Name: publication_keywords fk_publcation_keywords__keyword; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.publication_keywords
+    ADD CONSTRAINT fk_publcation_keywords__keyword FOREIGN KEY (keyword_id) REFERENCES slr.keywords(id);
+
+
+--
+-- TOC entry 3316 (class 2606 OID 20572)
+-- Name: publication_keywords fk_publication_keywords__publication; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.publication_keywords
+    ADD CONSTRAINT fk_publication_keywords__publication FOREIGN KEY (publication_id) REFERENCES slr.publications(id);
+
+
+--
+-- TOC entry 3328 (class 2606 OID 20702)
+-- Name: volume_numbers fk_volume_number__journal; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.volume_numbers
+    ADD CONSTRAINT fk_volume_number__journal FOREIGN KEY (journal_id) REFERENCES slr.journals(id);
+
+
+--
+-- TOC entry 3327 (class 2606 OID 20687)
+-- Name: volume_numbers fk_volume_number__publisher; Type: FK CONSTRAINT; Schema: slr; Owner: -
+--
+
+ALTER TABLE ONLY slr.volume_numbers
+    ADD CONSTRAINT fk_volume_number__publisher FOREIGN KEY (publisher_id) REFERENCES slr.publishers(id);
+
+
+-- Completed on 2019-12-20 18:06:54 -03
 
 --
 -- PostgreSQL database dump complete
