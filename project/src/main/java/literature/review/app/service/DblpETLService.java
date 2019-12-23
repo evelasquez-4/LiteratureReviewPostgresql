@@ -117,6 +117,9 @@ public class DblpETLService {
 			
 			String res = (String) procedureCall.getOutputs().getOutputParameterValue("res");
 			
+			if(session != null) 
+				session.close();
+			
 			return res.equals("success");
 			
 		} 
