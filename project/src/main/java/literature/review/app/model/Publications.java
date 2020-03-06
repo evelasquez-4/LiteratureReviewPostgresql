@@ -32,6 +32,7 @@ public class Publications implements java.io.Serializable {
 	@Column(name = "id", unique = true, nullable = false)
 	private long id;
 	
+	@Column(name = "abstract")
 	private String abstract_;
 	private String title;
 	private String pages;
@@ -336,5 +337,21 @@ public class Publications implements java.io.Serializable {
 	public void setPublicationKeywordses(Set<PublicationKeywords> publicationKeywordses) {
 		this.publicationKeywordses = publicationKeywordses;
 	}
-
+	
+	//funcion que extrae DOI de una publicacion
+	public String extractDOI()
+	{
+		String res = getEe();
+		String doi = "https://doi.org/";
+		
+		if(!res.isEmpty())
+		{
+			if(res.contains(doi))
+			{
+				res = res.substring(doi.length(), res.length());
+			}else
+				res = "";
+		}
+		return res;
+	}
 }

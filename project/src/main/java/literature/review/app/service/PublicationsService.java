@@ -26,7 +26,27 @@ public class PublicationsService {
 	
 	public Optional<Publications> findPublicationByKey(String key)
 	{
-		return publication.findPublicationByKey(key.toLowerCase());
+		return publication.findPublicationByKey(key);
 	}
+	
+	public List<Publications> findPublicationsByType(String doc_type, int limit)
+	{
+		return this.publication.listPublicationByType(doc_type, limit);
+	}
+	
+	public List<Publications> findByTypeState(String type, String state, int limit)
+	{
+		return this.publication.findByTypeState(state, type, limit);
+	}
+	public Publications update(Publications p)
+	{
+		return null;
+	}
+	
+	
+//	public Optional<Publications> listPublicationByTypeState(String state,String type,int limit)
+//	{
+//		return publication.listPublicationByTypeState(state,type,limit);
+//	}
 	
 }
