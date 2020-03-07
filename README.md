@@ -10,3 +10,5 @@
  sudo $CATALINA_HOME/bin/catalina.sh [start|stop|...]
 # 4. BACKUP DB
 pg_dump --format=p --schema-only --host=localhost --port=5432 --username=postgres --dbname=dbslr > /home/slr/slr_files/postgreSQL/DB07032020.sql
+# 5. Tomcat LOG
+sudo cat $CATALINA_HOME/logs/catalina.out
