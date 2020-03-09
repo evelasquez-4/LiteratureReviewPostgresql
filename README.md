@@ -12,7 +12,7 @@
 pg_dump --format=p --schema-only --host=localhost --port=5432 --username=postgres --dbname=dbslr > /home/slr/slr_files/postgreSQL/DB07032020.sql
 # 5. Permisos Usuario
   a)Permisos directorios tomcat
-  # chmod -R g+w /opt/tomcat/conf
+  ##    chmod -R g+w /opt/tomcat/conf
   # chmod -R g+w /opt/tomcat/logs
   # chmod -R g+w /opt/tomcat/temp
   # chmod -R g+w /opt/tomcat/webapps
