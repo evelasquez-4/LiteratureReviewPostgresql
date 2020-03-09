@@ -12,22 +12,22 @@
 pg_dump --format=p --schema-only --host=localhost --port=5432 --username=postgres --dbname=dbslr > /home/slr/slr_files/postgreSQL/DB07032020.sql
 # 5. Permisos Usuario
   a)Permisos directorios tomcat
-  chmod -R g+w /opt/tomcat/conf
-  chmod -R g+w /opt/tomcat/logs
-  chmod -R g+w /opt/tomcat/temp
-  chmod -R g+w /opt/tomcat/webapps
-  chmod -R g+w /opt/tomcat/work
+  # chmod -R g+w /opt/tomcat/conf
+  # chmod -R g+w /opt/tomcat/logs
+  # chmod -R g+w /opt/tomcat/temp
+  # chmod -R g+w /opt/tomcat/webapps
+  # chmod -R g+w /opt/tomcat/work
   b)“sticky-bit” de grupo (para que los nuevos ficheros/directorios creados por cualquier usuario pertenezcan al grupo “tomcat”)
-  chmod -R g+s /opt/tomcat/conf
-  chmod -R g+s /opt/tomcat/logs
-  chmod -R g+s /opt/tomcat/temp
-  chmod -R g+s /opt/tomcat/webapps
-  chmod -R g+s /opt/tomcat/work
+  # chmod -R g+s /opt/tomcat/conf
+  # chmod -R g+s /opt/tomcat/logs
+  # chmod -R g+s /opt/tomcat/temp
+  # chmod -R g+s /opt/tomcat/webapps
+  # chmod -R g+s /opt/tomcat/work
   c) Establecer que los archivos creados sean visto por los usuarios del grupo Tomcat
-  umask 002
+  #umask 002
   
   d) Referencia
-  https://rubensa.wordpress.com/2013/02/12/setting-tomcat-for-shared-use/
+  # https://rubensa.wordpress.com/2013/02/12/setting-tomcat-for-shared-use/
 # 6. Tomcat LOG
 sudo cat $CATALINA_HOME/logs/catalina.out
 # 7. Deploy 
