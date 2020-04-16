@@ -10,6 +10,10 @@
  sudo $CATALINA_HOME/bin/catalina.sh [start|stop|...]
 # 4. BACKUP DB
 pg_dump --format=p --schema-only --host=localhost --port=5432 --username=postgres --dbname=dbslr > /home/slr/slr_files/postgreSQL/DB07032020.sql
+
+#   4.1 Read script from file
+    psql -U postgres -d dbslr -h localhost -f /home/slr/slr_files/postgreSQL/countries.sql 
+
 # 5. Permisos Usuario
   a)Permisos directorios tomcat
   ####  chmod -R g+w /opt/tomcat/conf
