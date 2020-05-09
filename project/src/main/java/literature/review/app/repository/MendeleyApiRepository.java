@@ -10,9 +10,10 @@ import literature.review.app.model.Publications;
 @RepositoryRestResource
 public interface MendeleyApiRepository {
 	
-	public void updatePublications(List<Publications> publications) throws Exception;
+	public void updatePublications(List<Publications> publications,String mendeleyKey) throws Exception;
 	
 	public JSONArray findMendeleyPublicationByTitle(String title) throws Exception;
+	
+	public JSONArray findMendeleyPublicationByDOI(String doi) throws Exception;
  
-	public JSONArray findMendeleyPublication(Publications pub) throws Exception;
 }

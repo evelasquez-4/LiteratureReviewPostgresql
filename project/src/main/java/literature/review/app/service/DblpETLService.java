@@ -8,8 +8,6 @@ import javax.xml.stream.XMLStreamException;
 
 import org.hibernate.Session;
 import org.hibernate.procedure.ProcedureCall;
-import org.hibernate.procedure.ProcedureOutputs;
-import org.hibernate.result.Output;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

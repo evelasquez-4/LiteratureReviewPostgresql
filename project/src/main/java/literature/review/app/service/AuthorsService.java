@@ -1,5 +1,6 @@
 package literature.review.app.service;
 
+import java.util.Date;
 import java.util.Optional;
 
 import javax.persistence.ParameterMode;
@@ -18,6 +19,8 @@ public class AuthorsService {
 
 	@Autowired
 	private AuthorsRespository author;
+	@Autowired
+	private DepartmentsService department;
 	
 	
 	public Optional<Authors> findById(Long id)
@@ -40,6 +43,23 @@ public class AuthorsService {
 		return author.findByNames(names.toLowerCase());
 	}
 
+	public Authors registerAuthors(String names)
+	{
+		Authors res = new Authors();
+		Optional<Authors> opt = this.getAuthorByNames(names);
+		
+		if(opt.isPresent())
+			res = opt.get();
+		else {
+			res.setCreatedAt(new Date());
+			res.setDepartments(this.department.getDefaultDepartment());
+			res.setNames(names);
+			
+			res = this.author.saveAndFlush(res);
+		}
+		return res;
+	}
+	
 	public boolean processAuthors(String doc_type, int limite)
 	{
 		Session session = null;
@@ -71,5 +91,5 @@ public class AuthorsService {
 			}catch(Exception ex){}
 		}	
 	}
-	
+
 }

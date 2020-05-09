@@ -19,4 +19,12 @@ public interface AuthorPublicationsRepository extends JpaRepository<AuthorPublic
 			" WHERE ap.herarchy = 1 AND ap.publication_id = :publication_id"
 			,nativeQuery = true)
 	public Optional<Authors> findAuthorByPublication(@Param("publication_id") int id);
+	
+	@Query(value="SELECT au.* "
+			+ "FROM slr.author_publications ap "
+			+ "INNER JOIN slr.authors au ON au.id = ap.author_id "
+			+ "WHERE ap.publication_id = :publication_id AND ap.herarchy = :herarchy",
+			nativeQuery = true)
+	public Optional<Authors> getAuthorByHerarchy(@Param("publication_id") Integer id,
+			@Param("herarchy") Integer herarchy);
 }

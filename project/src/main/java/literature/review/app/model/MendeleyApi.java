@@ -9,121 +9,158 @@ import org.json.JSONObject;
 
 public class MendeleyApi {
 	
-	String id,title,type,abstract_,source,year = "";
-	List<String> identifiers = new ArrayList<String>();
-	List<String> keywords = new ArrayList<String>();
-	boolean updated = false;
-	
-	public MendeleyApi(JSONArray array,Publications pub)
-	{
-		if(array.length() == 0)
-			cargarValoresPorDefecto();
-		else {
-		
-			try {
-				JSONObject obj = array.getJSONObject(0);
-				
-				String resumen = obj.has("abstract")?obj.getString("abstract"):"";
-				String titulo = obj.has("title")?obj.getString("title"):"";
-				
-				if(obj.has("keywords"))
-				{
-					//obj.getJSONArray("")
-				} 
-				
-				setAbstract_(resumen);
-				setTitle(titulo);
-				
-				
-				this.updated = verifyUpdated(pub);
-				
-			} catch (JSONException e) 
-			{
-				System.err.println("Mendeley API error"+ e.getMessage());
-			}
-		}
-	}
-	
-	public boolean cargarKeyword(JSONArray keywords)
-	{
-		
-		//DBConnect conn = null;
-		
-		
-		return false;
-	}
-	
-	public void cargarValoresPorDefecto()
-	{
-		this.id="";
-		this.title="";
-		this.type="";
-		this.abstract_="";
-		this.source="";
-		this.year = "";
+	private JSONArray array;
+	private String title,abstract_ = "";
+	private List<String> authors = new ArrayList<String>();
+	private List<String> identifiers = new ArrayList<String>();
+	private List<String> keywords = new ArrayList<String>();
+	private int numElements = 0;
+
+	public MendeleyApi() {
+		this.array = new JSONArray();
+		this.title = "";
+		this.abstract_ = "";
+		this.authors = new ArrayList<String>();
 		this.identifiers = new ArrayList<String>();
 		this.keywords = new ArrayList<String>();
-		this.updated = false;
-	}
-	
-	public boolean verifyUpdated(Publications p)
-	{
-		return  !this.getAbstract_().isEmpty() || 
-						!p.getTitle().equalsIgnoreCase(this.getTitle());
+		this.numElements = 0;
 	}
 
-	public String getId() {
-		return id;
+	public MendeleyApi(JSONArray json, Publications pub) throws JSONException
+	{
+		
+		try {
+			this.array = json;
+			String doi = pub.extractDOI();
+			this.numElements = 0;
+			if( doi.equals(""))
+			{
+				//search by title
+				instanceByTitle(pub.getTitle());
+				
+			}else {
+				this.array.iterator().forEachRemaining(element->{
+					this.title = obtainTitle((JSONObject) element);
+					this.abstract_ = obtainAbstract((JSONObject) element);
+					this.authors = obtainAuthors((JSONObject) element);
+					this.keywords = obtainKeywords((JSONObject) element);
+					this.numElements++;
+				});
+			}
+	
+		} catch (JSONException e) 
+		{
+			System.err.println("Mendeley API error"+ e.getMessage());
+		}
 	}
-	public void setId(String id) {
-		this.id = id;
+
+	public void instanceByTitle(String tit)
+	{
+		String titulo = modifyTitle(tit);
+		this.array.iterator().forEachRemaining( 
+			(element)->{
+				
+				if( ((JSONObject) element).getString("title").equalsIgnoreCase (titulo) )
+				{
+					this.authors = obtainAuthors(((JSONObject) element));
+					this.keywords = obtainKeywords( ((JSONObject) element));
+					this.title = obtainTitle( (JSONObject)element );
+					this.abstract_ = obtainAbstract((JSONObject) element);
+					this.numElements++;
+				}
+			});
 	}
+	
+	public String obtainTitle(JSONObject json)
+	{
+		return	json.has("title")? json.getString("title"):"";
+	}
+	public String obtainAbstract(JSONObject json)
+	{
+		return json.has("abstract") ? json.getString("abstract") : "";
+	}
+	
+	public List<String> obtainAuthors(JSONObject json)
+	{
+		List<String> autores = new ArrayList<String>();
+		if(json.has("authors"))
+		{
+			json.getJSONArray("authors").iterator().forEachRemaining(author->{
+				String auth = ((JSONObject) author).getString("first_name")+" "+((JSONObject) author).getString("last_name");
+				autores.add(auth);
+			});
+		}
+		
+		return autores;
+	}
+	
+	public List<String> obtainKeywords(JSONObject json)
+	{
+		List<String> res = new ArrayList<String>();
+		if(json.has("keywords"))
+		{
+			json.getJSONArray("keywords").iterator().forEachRemaining(key->{
+				res.add(key.toString());
+			});
+		}
+		return res;
+	}
+	public boolean hasResults()
+	{
+		return this.array.length() > 0;
+	}
+
 	public String getTitle() {
 		return title;
 	}
+
 	public void setTitle(String title) {
 		this.title = title;
 	}
-	public String getType() {
-		return type;
-	}
-	public void setType(String type) {
-		this.type = type;
-	}
+
 	public String getAbstract_() {
 		return abstract_;
 	}
+
 	public void setAbstract_(String abstract_) {
 		this.abstract_ = abstract_;
 	}
-	public String getSource() {
-		return source;
+
+	public List<String> getAuthors() {
+		return authors;
 	}
-	public void setSource(String source) {
-		this.source = source;
+
+	public void setAuthors(List<String> authors) {
+		this.authors = authors;
 	}
-	public String getYear() {
-		return year;
-	}
-	public void setYear(String year) {
-		this.year = year;
-	}
+
 	public List<String> getIdentifiers() {
 		return identifiers;
 	}
+
 	public void setIdentifiers(List<String> identifiers) {
 		this.identifiers = identifiers;
 	}
+
 	public List<String> getKeywords() {
 		return keywords;
 	}
+
 	public void setKeywords(List<String> keywords) {
 		this.keywords = keywords;
 	}
-	public boolean isUpdated() {
-		return updated;
+
+	public String modifyTitle(String cadena)
+	{
+		return cadena.endsWith(".")?cadena.substring(0,cadena.length()-1):cadena;
 	}
-	public void setUpdated(boolean updated) {
-		this.updated = updated;
+
+	public int getNumElements() {
+		return numElements;
 	}
+
+	public void setNumElements(int numElements) {
+		this.numElements = numElements;
+	}
+	
 }

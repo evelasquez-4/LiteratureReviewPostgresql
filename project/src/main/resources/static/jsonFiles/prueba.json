@@ -1,0 +1,76 @@
+[
+  {
+    "web_pages": [
+      "http://www.marywood.edu"
+    ],
+    "name": "Marywood University",
+    "alpha_two_code": "US",
+    "state-province": null,
+    "domains": [
+      "marywood.edu"
+    ],
+    "country": "United States"
+  },
+  {
+    "web_pages": [
+      "https://www.cstj.qc.ca",
+      "https://ccmt.cstj.qc.ca",
+      "https://ccml.cstj.qc.ca"
+    ],
+    "name": "Cégep de Saint-Jérôme",
+    "alpha_two_code": "CA",
+    "state-province": null,
+    "domains": [
+      "cstj.qc.ca"
+    ],
+    "country": "Canada"
+  },
+  {
+    "web_pages": [
+      "http://www.lindenwood.edu/"
+    ],
+    "name": "Lindenwood University",
+    "alpha_two_code": "US",
+    "state-province": null,
+    "domains": [
+      "lindenwood.edu"
+    ],
+    "country": "United States"
+  },
+   {
+    "web_pages": [
+      "http://www.rectorat-uh2c.ac.ma/"
+    ],
+    "name": "Université Hassan II - Aïn Chock",
+    "alpha_two_code": "MA",
+    "state-province": null,
+    "domains": [
+      "rectorat-uh2c.ac.ma"
+    ],
+    "country": "Morocco"
+  },
+  {
+    "web_pages": [
+      "http://www.rumi.ac.ma/"
+    ],
+    "name": "Université Moulay Ismail Meknès",
+    "alpha_two_code": "MA",
+    "state-province": null,
+    "domains": [
+      "rumi.ac.ma"
+    ],
+    "country": "Morocco"
+  },
+  {
+    "web_pages": [
+      "https://www.up.ac.mz/"
+    ],
+    "name": "Universidade Pedagógica",
+    "alpha_two_code": "MZ",
+    "state-province": null,
+    "domains": [
+      "up.ac.mz"
+    ],
+    "country": "Mozambique"
+  }
+ ]

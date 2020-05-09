@@ -45,6 +45,15 @@ public class Departments implements java.io.Serializable {
 	private String skills;
 	private Date createdAt;
 	
+	@Column(name="link")
+	private String links;
+	
+	@Column(name = "validate")
+	private boolean validate;
+	
+	@Column(name = "members")
+	private int members;
+	
 	@OneToMany(fetch = FetchType.LAZY, mappedBy = "departments")
 	private Set<Authors> authorses = new HashSet<Authors>(0);
 
@@ -129,4 +138,28 @@ public class Departments implements java.io.Serializable {
 		this.authorses = authorses;
 	}
 
+	public String getLinks() {
+		return links;
+	}
+
+	public void setLinks(String links) {
+		this.links = links;
+	}
+
+	public boolean isValidate() {
+		return validate;
+	}
+
+	public void setValidate(boolean validate) {
+		this.validate = validate;
+	}
+
+	public int getMembers() {
+		return members;
+	}
+
+	public void setMembers(int members) {
+		this.members = members;
+	}
+	
 }

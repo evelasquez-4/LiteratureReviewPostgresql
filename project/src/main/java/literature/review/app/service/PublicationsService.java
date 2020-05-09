@@ -24,6 +24,11 @@ public class PublicationsService {
 		return publication.save(p);
 	}
 	
+	public Optional<Publications> findPublicationById(int id)
+	{
+		return publication.findById((long) id);
+	}
+	
 	public Optional<Publications> findPublicationByKey(String key)
 	{
 		return publication.findPublicationByKey(key);
@@ -38,15 +43,10 @@ public class PublicationsService {
 	{
 		return this.publication.findByTypeState(state, type, limit);
 	}
-	public Publications update(Publications p)
+	
+	public List<Publications> findNullAuthorsPublications(String type, String state, int limit)
 	{
-		return null;
+		return this.publication.findNullAuthorsPublications(state, type, limit);
+		
 	}
-	
-	
-//	public Optional<Publications> listPublicationByTypeState(String state,String type,int limit)
-//	{
-//		return publication.listPublicationByTypeState(state,type,limit);
-//	}
-	
 }

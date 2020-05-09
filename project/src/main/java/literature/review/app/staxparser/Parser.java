@@ -9,8 +9,6 @@ import javax.xml.stream.XMLStreamException;
 
 import org.springframework.stereotype.Component;
 
-
-
 @Component
 public class Parser {
 

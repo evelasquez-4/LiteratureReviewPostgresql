@@ -1,5 +1,6 @@
 package literature.review.app.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import literature.review.app.model.Authors;
 import literature.review.app.model.Publications;
 import literature.review.app.service.PublicationsService;
 
@@ -32,5 +34,14 @@ public class PublicationsController {
 	public Optional<Publications> findByKey(@RequestParam String key)
 	{
 		return this.publications.findPublicationByKey(key);
+	}
+	
+	public List<Authors> findAuthorsbyPublications(Publications pub)
+	{
+		List<Authors> res  = new ArrayList<Authors>();
+		
+		
+		
+		return res;
 	}
 }

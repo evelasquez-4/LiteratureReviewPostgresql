@@ -1,5 +1,7 @@
 package literature.review.app.service;
 
+import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 
 import javax.persistence.ParameterMode;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import literature.review.app.config.HibernateUtil;
 import literature.review.app.model.AuthorPublications;
 import literature.review.app.model.Authors;
+import literature.review.app.model.Publications;
 import literature.review.app.repository.AuthorPublicationsRepository;
 
 @Service
@@ -19,6 +22,8 @@ public class AuthorPublicationsService {
 
 	@Autowired
 	private AuthorPublicationsRepository author_publications;
+	@Autowired
+	private AuthorsService author_service;
 	
 	public AuthorPublications save(AuthorPublications data)
 	{
@@ -30,13 +35,34 @@ public class AuthorPublicationsService {
 		return author_publications.findAuthorByPublication(id);
 	}
 	
+	public Optional<Authors> getAuthorByPublicationHerarchy(Integer publication_id, Integer herachy)
+	{
+		return author_publications.getAuthorByHerarchy(publication_id, herachy);
+	}
+	
+	public void registerAuthorPublications(List<String> authors,Publications publication)
+	{
+		AuthorPublications ap = new AuthorPublications();
+		
+		for (int i = 0; i < authors.size(); i++) {
+			
+			Authors  auth = this.author_service.registerAuthors(authors.get(i));
+
+			ap.setCreateAt(new Date());
+			ap.setPublications(publication);
+			ap.setHerarchy(i+1);
+			ap.setAuthors(auth);
+			
+			this.author_publications.save(ap);
+		}
+	}
 	
 	@SuppressWarnings("unchecked")
 	public boolean authorPublicationsInsert(String docs_type , int limite)
 	{
 		Session session = null;
 
-		try {
+		try { 
 			session = HibernateUtil.getSession();
 			ProcedureCall procedureCall = session
 					.createStoredProcedureCall("slr.slr_author_publication_iud");

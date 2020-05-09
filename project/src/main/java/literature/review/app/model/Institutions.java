@@ -41,6 +41,13 @@ public class Institutions implements java.io.Serializable {
 	private Countries countries;
 	
 	private String description;
+	
+	@Column(name = "link",nullable = true)
+	private String link;
+	
+	@Column(name="updated")
+	private boolean updated;
+	
 	private Date createdAt;
 	
 	@OneToMany(fetch = FetchType.LAZY, mappedBy = "institutions")
@@ -106,4 +113,20 @@ public class Institutions implements java.io.Serializable {
 		this.departmentses = departmentses;
 	}
 
+	public String getLink() {
+		return link;
+	}
+
+	public void setLink(String link) {
+		this.link = link;
+	}
+
+	public boolean isUpdated() {
+		return updated;
+	}
+
+	public void setUpdated(boolean updated) {
+		this.updated = updated;
+	}
+	
 }

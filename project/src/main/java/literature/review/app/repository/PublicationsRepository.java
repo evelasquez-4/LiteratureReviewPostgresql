@@ -28,6 +28,16 @@ public interface PublicationsRepository extends JpaRepository<Publications, Long
 													@Param("type") String type,
 													@Param("limit") int limit);
 	
+	
+	@Query(value = "SELECT * FROM slr.Publications pub "
+			+ "WHERE pub.updated_state = :state AND pub.doc_type = :type "
+			+ "AND pub.authors::text= '{}' LIMIT :limit", nativeQuery = true)
+	public List<Publications> findNullAuthorsPublications(
+			@Param("state") String state,
+			@Param("type") String type,
+			@Param("limit") int limit
+			);
+
 //	@Query("FROM Publications WHERE updated_state = ?1 AND doc_type = ?2  LIMIT ?3")
 //	public Optional<Publications> listPublicationByTypeState(String state,String type, int limit);
 }
